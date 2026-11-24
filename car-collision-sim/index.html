@@ -3,8 +3,695 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crossing the Stream</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&family=Overpass+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a highway-sign header, the road scene full width, then math and Monte Carlo side by side (stacked on phones), then the setup sliders */
+:root {
+  --paper: #eef1ee;
+  --panel: #f8faf8;
+  --ink: #15201c;
+  --muted: #56645e;
+  --line: #cfd8d2;
+  --sign: #0b6b4b;
+  --sign-ink: #ffffff;
+  --ground: #c4cfc2;
+  --asphalt: #3d4347;
+  --marking: #f4f4ee;
+  --stream: #6aa6dc;
+  --cross: #f0b429;
+  --crash: #d8343a;
+  --ok: #2f8f5b;
+  --f-display: "Overpass", "Highway Gothic", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Overpass", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "Overpass Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #101614; --panel: #17201d; --ink: #e6ece8; --muted: #93a29b; --line: #2a3631;
+    --sign: #0f5c41; --sign-ink: #f3f7f4; --ground: #1d2622; --asphalt: #2e3438; --marking: #d9dcd4;
+    --stream: #7cb5ea; --cross: #f5bf3c; --crash: #f0575c; --ok: #4cc282;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #101614; --panel: #17201d; --ink: #e6ece8; --muted: #93a29b; --line: #2a3631;
+  --sign: #0f5c41; --sign-ink: #f3f7f4; --ground: #1d2622; --asphalt: #2e3438; --marking: #d9dcd4;
+  --stream: #7cb5ea; --cross: #f5bf3c; --crash: #f0575c; --ok: #4cc282;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 24px;
+}
+h1, h2 { font-family: var(--f-display); text-wrap: balance; margin: 0; }
+h2 { font-size: 1.3rem; font-weight: 800; letter-spacing: 0.01em; }
+p { margin: 0; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+/* Header styled as a guide sign */
+.sign {
+  background: var(--sign);
+  color: var(--sign-ink);
+  border-radius: 14px;
+  padding: 6px;
+}
+.sign-inner {
+  border: 2px solid color-mix(in srgb, var(--sign-ink) 85%, transparent);
+  border-radius: 10px;
+  padding: 18px 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px 32px;
+}
+.sign-text { display: grid; gap: 4px; min-width: 0; flex: 1 1 380px; }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.85; }
+.sign h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 800; line-height: 1.05; }
+.lede { max-width: 58ch; opacity: 0.92; }
+.answer { display: grid; justify-items: end; line-height: 1; gap: 6px; }
+.answer-frac { font-family: var(--f-display); font-weight: 800; font-size: clamp(2.6rem, 7vw, 4rem); }
+.answer-pct { font-family: var(--f-mono); font-size: 0.95rem; opacity: 0.9; }
+
+/* Scene */
+.scene { display: grid; gap: 14px; }
+.canvas-box { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--ground); }
+canvas { display: block; width: 100%; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.toolbar label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.85rem; }
+.toolbar input[type="range"] { width: 160px; max-width: 40vw; accent-color: var(--sign); }
+button {
+  font: 600 0.9rem var(--f-body);
+  padding: 8px 16px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--sign);
+  background: var(--sign);
+  color: var(--sign-ink);
+  cursor: pointer;
+  min-height: 44px;
+  touch-action: manipulation;
+}
+button.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+button:hover { filter: brightness(1.08); }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--cross); outline-offset: 2px; }
+button:disabled { opacity: 0.6; cursor: progress; }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.tile .k { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.tile .v { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 600; line-height: 1.2; }
+.tile .s { font-size: 0.8rem; color: var(--muted); }
+.tile.theory .v { color: var(--sign); }
+:root:not([data-theme="light"]) .tile.theory .v { color: var(--ink); }
+
+.latest { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 0.9rem; }
+.dots { display: flex; flex-wrap: wrap; gap: 4px; min-height: 12px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); }
+.dot.hit { background: var(--crash); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1px solid var(--line); background: var(--panel); }
+.chip.hit { color: var(--crash); border-color: var(--crash); }
+.chip.clear { color: var(--ok); border-color: var(--ok); }
+.legend { color: var(--muted); font-size: 0.88rem; max-width: 80ch; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+
+/* Math + Monte Carlo */
+.grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.card p { max-width: 65ch; }
+.terms { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.terms td { padding: 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.terms td:last-child { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 12px; }
+.terms tr.sum td { font-weight: 800; border-bottom: none; border-top: 2px solid var(--ink); }
+.terms .why { display: block; color: var(--muted); font-size: 0.8rem; }
+.formula { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-family: var(--f-mono); font-size: 0.9rem; white-space: nowrap; }
+.result-line { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 0.92rem; }
+.muted { color: var(--muted); font-size: 0.88rem; }
+#mcChart { height: 220px; border-radius: 8px; background: var(--paper); border: 1px solid var(--line); }
+
+/* Setup */
+.setup { display: grid; gap: 14px; }
+.setup-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.sliders { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px 24px; }
+.slider { display: grid; gap: 4px; }
+.slider label { display: flex; justify-content: space-between; gap: 8px; font-size: 0.88rem; }
+.slider output { font-family: var(--f-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.slider input { width: 100%; accent-color: var(--sign); }
+
+@media (max-width: 760px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .answer { justify-items: start; }
+  .wrap { padding-block: 12px 32px; gap: 18px; }
+  .sign { border-radius: 12px; padding: 4px; }
+  .sign-inner { padding: 14px 16px; }
+  .lede { font-size: 0.92rem; }
+  .card { padding: 16px; }
+  .canvas-box { margin-inline: -4px; }
+  .toolbar label { flex: 1 1 100%; }
+  .toolbar input[type="range"] { flex: 1 1 140px; width: auto; max-width: none; }
+  .tile { padding: 10px 12px; }
+  .tile .v { font-size: 1.35rem; }
+  .terms { font-size: 0.86rem; }
+  .terms td:last-child { white-space: normal; }
+  .formula { font-size: 0.8rem; }
+  #mcChart { height: 190px; }
+}
+input[type="range"] { min-height: 28px; }
+</style>
 </head>
 <body>
+<div class="wrap">
+  <header class="sign">
+    <div class="sign-inner">
+      <div class="sign-text">
+        <p class="eyebrow">Probability puzzle</p>
+        <h1>Crossing the Stream</h1>
+        <p class="lede">Cars 1&nbsp;m long with a 10&nbsp;m gap drive past at 10&nbsp;m/s. A 1&nbsp;m × ½&nbsp;m car crosses their lane at 10&nbsp;m/s, starting at a random moment. How often does it get hit?</p>
+      </div>
+      <p class="answer"><span class="answer-frac" id="ansFrac">3/11</span><span class="answer-pct" id="ansPct">≈ 27.27%</span></p>
+    </div>
+  </header>
 
+  <section class="scene" aria-label="Live simulation">
+    <div class="canvas-box"><canvas id="road" aria-label="Top-down view of the crossing: blue cars move left to right, the yellow car crosses upward"></canvas></div>
+    <div class="toolbar">
+      <button id="playBtn" type="button">Pause</button>
+      <label for="speed">Playback speed <output id="speedOut" class="num">0.25×</output></label>
+      <input type="range" id="speed" min="0.05" max="1" step="0.05" value="0.25">
+      <button id="resetBtn" class="ghost" type="button">Reset counts</button>
+    </div>
+    <div class="stats">
+      <div class="tile"><span class="k">Crossings</span><span class="v" id="stN">0</span><span class="s">watched so far</span></div>
+      <div class="tile"><span class="k">Crashes</span><span class="v" id="stK">0</span><span class="s" id="stAgree">math predicted 0 of 0</span></div>
+      <div class="tile"><span class="k">Observed rate</span><span class="v" id="stRate">–</span><span class="s" id="stCI">needs a few crossings</span></div>
+      <div class="tile theory"><span class="k">Math says</span><span class="v" id="stTheory">27.27%</span><span class="s" id="stTheoryFrac">3/11</span></div>
+    </div>
+    <div class="latest">
+      <span id="latestText" class="muted">Waiting for the first crossing…</span>
+      <div class="dots" id="dots" aria-label="Recent outcomes"></div>
+    </div>
+    <p class="legend">
+      <span class="swatch" style="background: var(--cross)"></span>The amber box on the road is the danger window drawn on the ground. If a blue car's nose is inside it at the moment the yellow car leaves the start line, they will collide. Watch for the amber dot on a blue car's nose: that is a crash waiting to happen. At launch the page states what the math predicts, then the cars play it out.
+    </p>
+  </section>
+
+  <section class="grid">
+    <article class="card">
+      <h2>Why it is <span id="mFracTitle">3/11</span></h2>
+      <p>Ride along with the stream so its cars stand still. The crossing car then moves diagonally backwards through the parked line. A crash happens if its footprint touches a stream car anywhere on that path.</p>
+      <p>Line up the positions where a stream car could be when the crossing starts and still get hit. They form one unbroken window made of four lengths:</p>
+      <table class="terms">
+        <tbody>
+          <tr><td>Stream car length L<sub>h</sub><span class="why">its full body has to pass the crossing car</span></td><td id="tLh">1 m</td></tr>
+          <tr><td>Crossing car width w<sub>v</sub><span class="why">the stream car must clear its full width</span></td><td id="twv">0.5 m</td></tr>
+          <tr><td>Crossing car length × v<sub>h</sub>/v<sub>v</sub><span class="why">how far the stream moves while the crossing car's body passes</span></td><td id="tLv">1 × 1 = 1 m</td></tr>
+          <tr><td>Stream car width × v<sub>h</sub>/v<sub>v</sub><span class="why">how far the stream moves while the crossing car traverses the lane</span></td><td id="twh">0.5 × 1 = 0.5 m</td></tr>
+          <tr class="sum"><td>Danger window</td><td id="tD">3 m</td></tr>
+          <tr><td>One car plus one gap (repeat length)</td><td id="tPer">11 m</td></tr>
+        </tbody>
+      </table>
+      <p>The random start time makes the stream's position uniform over one repeat length, so the chance of a crash is the window divided by the repeat length: <strong class="num" id="tProb">3 / 11 = 27.27%</strong>.</p>
+      <div class="formula">P = [ L<sub>h</sub> + w<sub>v</sub> + (v<sub>h</sub>/v<sub>v</sub>)(L<sub>v</sub> + w<sub>h</sub>) ] / (L<sub>h</sub> + gap)</div>
+      <p class="muted">Assumes the stream cars are also ½ m wide. If the 10 m in the sketch means centre to centre instead of the gap, the repeat length is 10 m and the answer is 3/10 = 30%. Use the preset below to see that case.</p>
+    </article>
+
+    <article class="card">
+      <h2>Monte Carlo check</h2>
+      <p>Each trial picks a uniformly random start time, then steps both cars through the crossing in 0.8&nbsp;ms increments and tests whether their rectangles overlap. The formula is not used.</p>
+      <div><button id="mcBtn" type="button">Run 20,000 trials</button></div>
+      <p class="result-line" id="mcResult">Running…</p>
+      <canvas id="mcChart" aria-label="Running crash rate converging to the predicted value"></canvas>
+      <p class="muted">Solid line: crash rate so far. Dashed line: the formula. The band shows the 95% range expected from chance alone.</p>
+    </article>
+  </section>
+
+  <section class="setup card" aria-label="Change the setup">
+    <div class="setup-head">
+      <h2>Change the setup</h2>
+      <div class="presets">
+        <button type="button" id="presetSketch">Reset to problem values</button>
+        <button type="button" class="ghost" id="presetCenter">10 m centre to centre</button>
+      </div>
+    </div>
+    <div class="sliders" id="sliders"></div>
+    <p class="muted">Problem values: cars 1 m × ½ m, 10 m gap, both at 10 m/s, playback 0.25×. Changing anything resets the counts and reruns the Monte Carlo check.</p>
+  </section>
+</div>
+
+<script>
+(() => {
+  // World units: metres and seconds. Intersection at the origin, stream moves +x, crossing car moves +y.
+  const Y0 = -6.5;            // crossing car's nose starts here (the start line)
+  const DEF = { gap: 10, vh: 10, vv: 10, Lh: 1, wh: 0.5, Lv: 1, wv: 0.5 };
+  const SLIDERS = [
+    ['gap', 'Gap between stream cars', 1, 30, 0.5, 'm'],
+    ['vh', 'Stream speed v<sub>h</sub>', 1, 30, 1, 'm/s'],
+    ['vv', 'Crossing speed v<sub>v</sub>', 1, 30, 1, 'm/s'],
+    ['Lh', 'Stream car length L<sub>h</sub>', 0.25, 4, 0.25, 'm'],
+    ['wh', 'Stream car width w<sub>h</sub>', 0.25, 2, 0.25, 'm'],
+    ['Lv', 'Crossing car length L<sub>v</sub>', 0.25, 4, 0.25, 'm'],
+    ['wv', 'Crossing car width w<sub>v</sub>', 0.25, 2, 0.25, 'm'],
+  ];
+  const $ = (id) => document.getElementById(id);
+  const mod = (a, b) => ((a % b) + b) % b;
+  const fmt = (x) => String(+x.toFixed(3));
+  const pct = (x) => (100 * x).toFixed(2) + '%';
+
+  let p = { ...DEF };
+  let d = {};
+
+  function derive() {
+    const period = p.Lh + p.gap;
+    const yIn = -p.wh / 2, yOut = p.wh / 2 + p.Lv;   // nose positions bounding overlap with the lane
+    const A = -p.wv / 2, B = p.wv / 2 + p.Lh;        // stream nose positions bounding overlap in x
+    const t1 = (yIn - Y0) / p.vv, t2 = (yOut - Y0) / p.vv;
+    const zoneLo = A - p.vh * t2, zoneHi = B - p.vh * t1;
+    const D = zoneHi - zoneLo;                        // = Lh + wv + (vh/vv)(Lv + wh)
+    d = { period, yIn, yOut, A, B, t1, t2, zoneLo, zoneHi, D, prob: Math.min(1, D / period), ratio: p.vh / p.vv };
+  }
+
+  function fraction(x) {
+    for (let den = 1; den <= 2000; den++) {
+      const num = Math.round(x * den);
+      if (Math.abs(num / den - x) < 1e-9) return num + '/' + den;
+    }
+    return null;
+  }
+
+  function predict(s) {
+    if (d.D >= d.period) return true;
+    const m = mod(s - d.zoneLo, d.period);
+    return m > 0 && m < d.D;
+  }
+
+  // ---------- Math panel ----------
+  function renderMath() {
+    const r = d.ratio;
+    const fr = d.D >= d.period ? '1' : fraction(d.D / d.period);
+    const frText = fr || pct(d.prob);
+    $('ansFrac').textContent = frText;
+    $('ansPct').textContent = '≈ ' + pct(d.prob);
+    $('mFracTitle').textContent = frText;
+    $('stTheory').textContent = pct(d.prob);
+    $('stTheoryFrac').textContent = fr ? fr : 'from the formula';
+    $('tLh').textContent = fmt(p.Lh) + ' m';
+    $('twv').textContent = fmt(p.wv) + ' m';
+    $('tLv').textContent = fmt(p.Lv) + ' × ' + fmt(r) + ' = ' + fmt(p.Lv * r) + ' m';
+    $('twh').textContent = fmt(p.wh) + ' × ' + fmt(r) + ' = ' + fmt(p.wh * r) + ' m';
+    $('tD').textContent = fmt(d.D) + ' m';
+    $('tPer').textContent = fmt(d.period) + ' m';
+    $('tProb').textContent = d.D >= d.period
+      ? 'window ≥ repeat length, so a crash is certain'
+      : fmt(d.D) + ' / ' + fmt(d.period) + (fr ? ' = ' + fr : '') + ' = ' + pct(d.prob);
+  }
+
+  // ---------- Live simulation ----------
+  const canvas = $('road'), ctx = canvas.getContext('2d');
+  const box = canvas.parentElement;
+  let W = 0, H = 0, ppm = 20, dpr = 1, viewTop = 8, viewHalfW = 17;
+
+  let s, cross, wait, freeze, burst, hitCar, hitTimer, stats, log;
+  function resetSim() {
+    s = -3; cross = null; freeze = 0; burst = null; hitCar = null; hitTimer = 0;
+    stats = { n: 0, k: 0, agree: 0 }; log = [];
+    schedule();
+    renderStats();
+    $('latestText').textContent = 'Waiting for the first crossing…';
+  }
+  // Delay spans exactly one stream period on top of a fixed pause, so the stream's offset at launch is uniform.
+  function schedule() { wait = 0.3 + Math.random() * d.period / p.vh; }
+
+  function launch() {
+    cross = { yf: Y0, predicted: predict(s), resolved: false, id: stats.n + 1 };
+    $('latestText').innerHTML = 'Crossing #' + cross.id + ' · math predicts <span class="chip ' +
+      (cross.predicted ? 'hit">crash' : 'clear">clear') + '</span>';
+  }
+
+  function record(crashed) {
+    cross.resolved = true;
+    stats.n++;
+    if (crashed) stats.k++;
+    if (crashed === cross.predicted) stats.agree++;
+    log.push(crashed);
+    if (log.length > 60) log.shift();
+    $('latestText').innerHTML = 'Crossing #' + cross.id + ' · predicted <span class="chip ' +
+      (cross.predicted ? 'hit">crash' : 'clear">clear') + '</span> observed <span class="chip ' +
+      (crashed ? 'hit">crash' : 'clear">clear') + '</span>';
+    renderStats();
+  }
+
+  function renderStats() {
+    $('stN').textContent = stats.n;
+    $('stK').textContent = stats.k;
+    $('stAgree').textContent = 'math predicted ' + stats.agree + ' of ' + stats.n + ' correctly';
+    if (stats.n) {
+      const r = stats.k / stats.n;
+      $('stRate').textContent = pct(r);
+      const half = 1.96 * Math.sqrt(d.prob * (1 - d.prob) / stats.n);
+      $('stCI').textContent = stats.n < 10 ? 'needs a few more crossings' : 'chance alone: ±' + (100 * half).toFixed(1) + ' pts';
+    } else {
+      $('stRate').textContent = '–';
+      $('stCI').textContent = 'needs a few crossings';
+    }
+    $('dots').innerHTML = log.map((c) => '<span class="dot' + (c ? ' hit' : '') + '"></span>').join('');
+  }
+
+  function stepSim(dt) {
+    if (!cross) {
+      const step = Math.min(dt, wait);
+      s += p.vh * step; wait -= step;
+      if (wait <= 0) launch();
+      return;
+    }
+    // Exact earliest contact inside [0, dt]: both cars move linearly, so overlap times are intervals.
+    if (!cross.resolved) {
+      const yLo = (d.yIn - cross.yf) / p.vv, yHi = (d.yOut - cross.yf) / p.vv;
+      if (yHi > 0 && yLo < dt) {
+        let hit = null;
+        const nLo = Math.ceil((d.A - p.vh * dt - s) / d.period), nHi = Math.floor((d.B - s) / d.period);
+        for (let n = nLo; n <= nHi; n++) {
+          const f0 = s + n * d.period;
+          const lo = Math.max(0, yLo, (d.A - f0) / p.vh);
+          const hi = Math.min(dt, yHi, (d.B - f0) / p.vh);
+          if (lo < hi && (!hit || lo < hit.t)) hit = { t: lo, n };
+        }
+        if (hit) {
+          s += p.vh * hit.t; cross.yf += p.vv * hit.t;
+          const f = s + hit.n * d.period;
+          burst = {
+            x: (Math.max(f - p.Lh, -p.wv / 2) + Math.min(f, p.wv / 2)) / 2,
+            y: (Math.max(-p.wh / 2, cross.yf - p.Lv) + Math.min(p.wh / 2, cross.yf)) / 2,
+          };
+          hitCar = hit.n; hitTimer = 2.2; freeze = 1.0;
+          record(true);
+          return;
+        }
+      }
+    }
+    s += p.vh * dt; cross.yf += p.vv * dt;
+    if (!cross.resolved && cross.yf >= d.yOut) record(false);
+    if (cross.yf - p.Lv > viewTop + 0.5) { cross = null; schedule(); }
+  }
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = box.clientWidth;
+    // Zoom in on phones, but always keep the danger window in view.
+    const narrow = W < 560;
+    const needHalf = Math.max(narrow ? 10 : 17, Math.min(40, -d.zoneLo + 1.5));
+    ppm = W / (2 * needHalf);
+    H = narrow ? Math.max(280, Math.round(17 * ppm)) : Math.max(260, Math.round(W * 0.46));
+    ppm = Math.min(ppm, H / 17);
+    canvas.style.height = H + 'px';
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    viewTop = H / 2 / ppm; viewHalfW = W / 2 / ppm;
+  }
+
+  const css = () => {
+    const cs = getComputedStyle(document.documentElement);
+    const g = (n) => cs.getPropertyValue(n).trim();
+    return { ground: g('--ground'), asphalt: g('--asphalt'), marking: g('--marking'), stream: g('--stream'),
+      cross: g('--cross'), crash: g('--crash'), ink: g('--ink') };
+  };
+  const X = (x) => W / 2 + x * ppm;
+  const Yc = (y) => H / 2 - y * ppm;
+
+  function roundRect(x0, y0, x1, y1, r) {
+    const x = X(x0), y = Yc(y1), w = (x1 - x0) * ppm, h = (y1 - y0) * ppm;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2)) : ctx.rect(x, y, w, h);
+  }
+
+  function draw() {
+    const c = css();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = c.ground; ctx.fillRect(0, 0, W, H);
+    const RH = Math.max(1.6, p.wh + 0.9), RV = Math.max(1.6, p.wv + 0.9);
+
+    // Roads
+    ctx.fillStyle = c.asphalt;
+    ctx.fillRect(0, Yc(RH / 2), W, RH * ppm);
+    ctx.fillRect(X(-RV / 2), 0, RV * ppm, H);
+    ctx.strokeStyle = c.marking; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (const y of [RH / 2 - 0.1, -RH / 2 + 0.1]) {
+      ctx.moveTo(0, Yc(y)); ctx.lineTo(X(-RV / 2), Yc(y));
+      ctx.moveTo(X(RV / 2), Yc(y)); ctx.lineTo(W, Yc(y));
+    }
+    for (const x of [-RV / 2 + 0.1, RV / 2 - 0.1]) {
+      ctx.moveTo(X(x), 0); ctx.lineTo(X(x), Yc(RH / 2));
+      ctx.moveTo(X(x), Yc(-RH / 2)); ctx.lineTo(X(x), H);
+    }
+    ctx.stroke(); ctx.globalAlpha = 1;
+
+    // Start line
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = c.marking; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(X(-RV / 2), Yc(Y0)); ctx.lineTo(X(RV / 2), Yc(Y0)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = '600 12px Overpass, system-ui, sans-serif';
+    ctx.fillStyle = c.ink; ctx.textBaseline = 'middle';
+    ctx.fillText('start line', X(RV / 2) + 8, Yc(Y0));
+
+    // Danger window on the ground
+    const zLo = d.D >= d.period ? -viewHalfW : d.zoneLo, zHi = d.D >= d.period ? viewHalfW : d.zoneHi;
+    ctx.fillStyle = c.cross; ctx.globalAlpha = 0.25;
+    ctx.fillRect(X(zLo), Yc(RH / 2), (zHi - zLo) * ppm, RH * ppm);
+    ctx.globalAlpha = 1; ctx.strokeStyle = c.cross; ctx.setLineDash([6, 4]); ctx.lineWidth = 2;
+    ctx.strokeRect(X(zLo), Yc(RH / 2), (zHi - zLo) * ppm, RH * ppm); ctx.setLineDash([]);
+    const label = 'danger window · ' + fmt(d.D) + ' m';
+    const lx = Math.max(6, Math.min(W - ctx.measureText(label).width - 6, X((zLo + zHi) / 2) - ctx.measureText(label).width / 2));
+    ctx.fillStyle = c.ink; ctx.textBaseline = 'bottom';
+    ctx.fillText(label, lx, Yc(RH / 2) - 6);
+
+    // Stream cars
+    const nLo = Math.floor((-viewHalfW - s) / d.period) - 1, nHi = Math.ceil((viewHalfW + p.Lh - s) / d.period) + 1;
+    for (let n = nLo; n <= nHi; n++) {
+      const f = s + n * d.period;
+      const hit = n === hitCar && hitTimer > 0;
+      ctx.fillStyle = hit ? c.crash : c.stream;
+      roundRect(f - p.Lh, -p.wh / 2, f, p.wh / 2, 0.12 * ppm); ctx.fill();
+      ctx.fillStyle = c.asphalt; ctx.globalAlpha = 0.45;      // windscreen near the nose
+      ctx.fillRect(X(f - p.Lh * 0.32), Yc(p.wh / 2 - 0.06), p.Lh * 0.12 * ppm, (p.wh - 0.12) * ppm);
+      ctx.globalAlpha = 1;
+      if (!cross && d.D < d.period && f > d.zoneLo && f < d.zoneHi) {
+        ctx.fillStyle = c.cross; ctx.beginPath();
+        ctx.arc(X(f), Yc(0), Math.max(3, 0.12 * ppm), 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // Crossing car
+    if (cross) {
+      ctx.fillStyle = burst ? c.crash : c.cross;
+      roundRect(-p.wv / 2, cross.yf - p.Lv, p.wv / 2, cross.yf, 0.12 * ppm); ctx.fill();
+      ctx.fillStyle = c.asphalt; ctx.globalAlpha = 0.45;
+      ctx.fillRect(X(-p.wv / 2 + 0.06), Yc(cross.yf - p.Lv * 0.2), (p.wv - 0.12) * ppm, p.Lv * 0.12 * ppm);
+      ctx.globalAlpha = 1;
+    }
+
+    // Crash burst
+    if (burst && freeze > 0) {
+      const k = 1 - freeze;                    // 0 → 1 over the pause
+      const r0 = 6 + 26 * Math.min(1, k * 3);
+      ctx.strokeStyle = c.crash; ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        ctx.moveTo(X(burst.x) + Math.cos(a) * r0 * 0.45, Yc(burst.y) + Math.sin(a) * r0 * 0.45);
+        ctx.lineTo(X(burst.x) + Math.cos(a) * r0, Yc(burst.y) + Math.sin(a) * r0);
+      }
+      ctx.stroke();
+      ctx.font = '800 20px Overpass, system-ui, sans-serif';
+      ctx.fillStyle = c.crash; ctx.textBaseline = 'bottom';
+      ctx.fillText('CRASH', X(burst.x) + 22, Yc(burst.y) - 18);
+    }
+
+    // Labels: speeds and scale bar
+    ctx.font = '600 12px Overpass, system-ui, sans-serif';
+    ctx.fillStyle = c.ink; ctx.textBaseline = 'top';
+    ctx.fillText('stream → ' + fmt(p.vh) + ' m/s', 10, Yc(-RH / 2) + 8);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('↑ ' + fmt(p.vv) + ' m/s', X(RV / 2) + 8, Yc(Y0 / 2 - 1));
+    const sbY = H - 16;
+    ctx.strokeStyle = c.ink; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(12, sbY); ctx.lineTo(12 + 2 * ppm, sbY);
+    ctx.moveTo(12, sbY - 4); ctx.lineTo(12, sbY + 4); ctx.moveTo(12 + 2 * ppm, sbY - 4); ctx.lineTo(12 + 2 * ppm, sbY + 4);
+    ctx.stroke();
+    ctx.textBaseline = 'bottom'; ctx.fillText('2 m', 12, sbY - 6);
+  }
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let running = !reduce, speed = 0.25, last = performance.now();
+  function frame(now) {
+    const realDt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (running) {
+      if (hitTimer > 0) hitTimer -= realDt;
+      if (freeze > 0) {
+        freeze -= realDt;
+        if (freeze <= 0) { cross = null; burst = null; schedule(); }
+      } else {
+        const simDt = realDt * speed, N = Math.max(1, Math.ceil(simDt / 0.002));
+        for (let i = 0; i < N && freeze <= 0; i++) stepSim(simDt / N);
+      }
+    }
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  $('playBtn').textContent = running ? 'Pause' : 'Play';
+  $('playBtn').addEventListener('click', () => {
+    running = !running; $('playBtn').textContent = running ? 'Pause' : 'Play';
+  });
+  $('speed').addEventListener('input', (e) => {
+    speed = +e.target.value; $('speedOut').textContent = speed.toFixed(2) + '×';
+  });
+  $('resetBtn').addEventListener('click', resetSim);
+
+  // ---------- Monte Carlo ----------
+  const chart = $('mcChart'), cctx = chart.getContext('2d');
+  let mc = { pts: [], n: 0, k: 0, N: 20000, job: 0 };
+
+  function mcTrial() {
+    const s0 = Math.random() * d.period;   // random start time ⇒ stream offset uniform over one period
+    const dt = 0.0008;
+    for (let t = Math.max(0, d.t1 - dt); t <= d.t2 + dt; t += dt) {
+      const yf = Y0 + p.vv * t, yr = yf - p.Lv;
+      if (yf <= -p.wh / 2 || yr >= p.wh / 2) continue;           // not on the lane yet / already past
+      const sh = s0 + p.vh * t;
+      const n = Math.ceil((-p.wv / 2 - sh) / d.period);         // first stream car with its nose past the crossing car's left side
+      const f = sh + n * d.period;
+      if (f > -p.wv / 2 && f - p.Lh < p.wv / 2) return true;     // rectangles overlap
+    }
+    return false;
+  }
+
+  function runMC() {
+    const job = ++mc.job;
+    mc.pts = []; mc.n = 0; mc.k = 0;
+    $('mcBtn').disabled = true;
+    $('mcResult').textContent = 'Running…';
+    const chunk = () => {
+      if (job !== mc.job) return;
+      const end = Math.min(mc.N, mc.n + 400);
+      while (mc.n < end) {
+        if (mcTrial()) mc.k++;
+        mc.n++;
+        if (mc.n % 50 === 0) mc.pts.push([mc.n, mc.k / mc.n]);
+      }
+      const r = mc.k / mc.n;
+      $('mcResult').textContent = mc.k.toLocaleString() + ' crashes in ' + mc.n.toLocaleString() + ' trials = ' + pct(r) +
+        '   (formula ' + pct(d.prob) + ')';
+      drawChart();
+      if (mc.n < mc.N) requestAnimationFrame(chunk); else $('mcBtn').disabled = false;
+    };
+    requestAnimationFrame(chunk);
+  }
+
+  function drawChart() {
+    const c = css();
+    const cd = window.devicePixelRatio || 1, w = chart.clientWidth, h = chart.clientHeight;
+    if (chart.width !== Math.round(w * cd)) { chart.width = Math.round(w * cd); chart.height = Math.round(h * cd); }
+    cctx.setTransform(cd, 0, 0, cd, 0, 0);
+    cctx.clearRect(0, 0, w, h);
+    const L = 52, R = 12, T = 12, B = 26;
+    const th = d.prob;
+    const yMin = Math.max(0, th - 0.15), yMax = Math.min(1, th + 0.15);
+    const xs = (n) => L + (n / mc.N) * (w - L - R);
+    const ys = (v) => T + (1 - (v - yMin) / (yMax - yMin)) * (h - T - B);
+    cctx.font = '11px "Overpass Mono", ui-monospace, monospace';
+    cctx.fillStyle = c.ink; cctx.globalAlpha = 0.7;
+    cctx.textBaseline = 'middle'; cctx.textAlign = 'right';
+    cctx.strokeStyle = c.ink; cctx.lineWidth = 1;
+    for (const v of [yMin, th, yMax]) {
+      cctx.fillText((100 * v).toFixed(1) + '%', L - 6, ys(v));
+      cctx.globalAlpha = 0.12; cctx.beginPath(); cctx.moveTo(L, ys(v)); cctx.lineTo(w - R, ys(v)); cctx.stroke(); cctx.globalAlpha = 0.7;
+    }
+    cctx.textBaseline = 'top';
+    for (const [n, al] of [[0, 'left'], [mc.N / 2, 'center'], [mc.N, 'right']]) {
+      cctx.textAlign = al; cctx.fillText(n.toLocaleString(), xs(n), h - B + 6);
+    }
+    cctx.globalAlpha = 1; cctx.textAlign = 'left';
+    // 95% band from chance alone
+    cctx.fillStyle = c.cross; cctx.globalAlpha = 0.18; cctx.beginPath();
+    const steps = 80;
+    for (let i = 0; i <= steps; i++) {
+      const n = Math.max(30, (i / steps) * mc.N);
+      const y = ys(Math.min(yMax, th + 1.96 * Math.sqrt(th * (1 - th) / n)));
+      i ? cctx.lineTo(xs((i / steps) * mc.N), y) : cctx.moveTo(xs(0), y);
+    }
+    for (let i = steps; i >= 0; i--) {
+      const n = Math.max(30, (i / steps) * mc.N);
+      cctx.lineTo(xs((i / steps) * mc.N), ys(Math.max(yMin, th - 1.96 * Math.sqrt(th * (1 - th) / n))));
+    }
+    cctx.closePath(); cctx.fill(); cctx.globalAlpha = 1;
+    // formula line
+    cctx.strokeStyle = c.ink; cctx.setLineDash([6, 5]); cctx.lineWidth = 1.5;
+    cctx.beginPath(); cctx.moveTo(L, ys(th)); cctx.lineTo(w - R, ys(th)); cctx.stroke(); cctx.setLineDash([]);
+    // running estimate
+    if (mc.pts.length) {
+      cctx.save(); cctx.beginPath(); cctx.rect(L, T, w - L - R, h - T - B); cctx.clip();
+      cctx.strokeStyle = c.crash; cctx.lineWidth = 2; cctx.beginPath();
+      mc.pts.forEach(([n, v], i) => (i ? cctx.lineTo(xs(n), ys(v)) : cctx.moveTo(xs(n), ys(v))));
+      cctx.stroke();
+      const [ln, lv] = mc.pts[mc.pts.length - 1];
+      cctx.fillStyle = c.crash; cctx.beginPath(); cctx.arc(xs(ln), ys(lv), 4, 0, Math.PI * 2); cctx.fill();
+      cctx.restore();
+    }
+  }
+  $('mcBtn').addEventListener('click', runMC);
+
+  // ---------- Setup sliders ----------
+  const host = $('sliders');
+  host.innerHTML = SLIDERS.map(([k, label, mn, mx, st, unit]) =>
+    '<div class="slider"><label for="p_' + k + '"><span>' + label + '</span><output id="o_' + k + '"></output></label>' +
+    '<input type="range" id="p_' + k + '" min="' + mn + '" max="' + mx + '" step="' + st + '"></div>').join('');
+  function syncSliders() {
+    for (const [k, , , , , unit] of SLIDERS) {
+      $('p_' + k).value = p[k];
+      $('o_' + k).textContent = fmt(p[k]) + ' ' + unit;
+    }
+  }
+  let mcTimer = 0;
+  function applyParams() {
+    derive(); resize(); renderMath(); syncSliders(); resetSim();
+    clearTimeout(mcTimer); mcTimer = setTimeout(runMC, 250);
+  }
+  for (const [k] of SLIDERS) {
+    $('p_' + k).addEventListener('input', (e) => { p[k] = +e.target.value; applyParams(); });
+  }
+  $('presetSketch').addEventListener('click', () => {
+    p = { ...DEF };
+    speed = 0.25; $('speed').value = speed; $('speedOut').textContent = '0.25×';
+    applyParams();
+  });
+  $('presetCenter').addEventListener('click', () => { p = { ...DEF, gap: 10 - DEF.Lh }; applyParams(); });
+
+  new ResizeObserver(() => { resize(); drawChart(); }).observe(box);
+  derive(); resize(); renderMath(); syncSliders(); resetSim();
+  runMC();
+  requestAnimationFrame(frame);
+})();
+</script>
 </body>
 </html>
